@@ -1,0 +1,157 @@
+-Dimensions in mm
+
+-Weights in Kg
+
+TYPICAL
+DRAWING
+
+EJ)! VZAr V7)
+Ki
+
+4 | ZN NVZZA_
+
+Ae WAY
+
+¢
+
+: Y wy _ Uy
+
+167
+
+\
+
+SUITABLE
+FOR
+SEALWELDING
+
+DRAIN DETAIL
+
+CUSTOMER:
+KCOI LPP
+
+EPC/END USER
+RTJ FINISH / Ncoe
+
+TECHNICAL REMARKS AND CONSTRUCTION DETAIL :
+DESIGN API 6D
+ANTISTATIC DEVICE
+ANTI BLOW QUT STEM
+POSITION INDICATOR
+FIRE-SAFE DESIGN ACC. TO API 6FA
+FACE TO FACE DIMENSIONS: API 6D
+END FLANGE DIMENSIONS: ASME B16.5
+FLANGE FINISH: RTJ AS PER ASME B165
+VALVE PRESSURE TEST STANDARD: API 6D
+DESIGN TEMPERATURE: -40°C / +200°C
+DESIGN PRESSURE! 1021bar (-40°C) / 87.6bar ¢+200°C>
+PRESSURE TEST: -BODY - HYDROSTATIC 153.2bar
+-SEAT - HYDROSTATIC 112.3b0r
+* LEAKAGE CLASS: ISO 5208 RATE A
+¢ SELF RELIEVING SEATS
++ SEAT AND SEAL MATERIALS ARE ANTI-EXPLOSIVE DECOMPRESSION
+(AED) RESISTANT
+¢ FUGITIVE EMISSION ISD1S848-2
+
+P.O. No:
+
+6
+
+MAAN
+
+NESSES erreesse
+IN NN CASPIAN
+If \ Ut
+
+valves
+
+0. Atambayeva 14/2
+060000 Atyrau
+Kazakhstan
+
+3TOT DOKYMEHT ABNIAETCA KOH®VJEHLMANbHEM VM VCKNIONMTENbHOM COBCTBEHHOCTbIO ERREESSE CASPIAN VALVES
+
+5725000742
+
+TAG No.: — 41—-2210-RB—279/278/277 _| VALVE 0.S.:
+
+. 23/05/25 - [|
+owe_29/05/25 _15 a [003 aco [alts
+Dram: BOGEMBAYEV N. |2[ wa [ 002[31.0725 | H, Woah, Din, TAS Wunber, fremeie |
+[NB oot 250525 [Fretiswe oy Foe
+wenoen: anossl C._|Btar teed owe [on —pescmprow —————jS@e_-- | =F ©
+
+SiZEwew| ASME | ENDS | L_ | #d | oF | He | Ax |WEIGHT-
+| 2” {| 600 | Rt | 295 | 49 | 165 | 225 | 30] 45 |
+
+Notes :
+x RECOMMENDED SPARE PARTS
+NO6625 W.0. NO6625 WELD OVERLAY 3mm MIN, THICK
+HDG: HOT DIP GALVANIZED
+W.Z.P.1 WHITE ZINC PLATED
+
+Pos.|Description _— [Material | Note
+1
+2
+
+| 3 fBoll ASTM A479 GrstessioL |
+5
+Seat Insert PEEK
+7
+13
+|_17 [oland ASTM A479 S200
+|_23 [Dperator Flange fast assO LFe clu =|
+|_@7 [Trunnion ASTM A479 S200 XI
+|_103 [lantern Ring | ASTM A479 Grate/sieL |
+|x256 [Stem V-Pock | RPTFE + PTFE + ELGoy |
+| *364 [Seat Lip Seal [PTFE +ELGnoy |
+| *402 [Body FS. Gasket | SS Gr3i6 + GRAPHITE |
+04 GRAPHITE Po
+|*405 |p. Flange FS. Gasket | GraPHitfe |
+| x407 [Trunnion F.S. Gasket [GRAPHITE |
+|*409 [Seat FS. Gasket | GRAPHITE, =|
+|*414 [Body Gasket | GRAPHITE, =
+[415 [Gland Gasket | GRAPHITE, =
+1416 [Trunnion Gasket | GRAPHITE, =|
+|_432 [Stem Bushing | SS Gr3i6 + PTFE |
+|_433 [Gland Bushing | SS Graig + PTFE |
+| 436 [Boll Bushing | SS Grsi6 + PTFE |
+438 [Stem Washer SS Graig + PTFE
+|_ 463 [Stem/Ball Pin | ASTM A479 S200 MID
+|_ 469 [Stop Sector Pin | ASTM A479 Grzi6/sigL |
+| 506 [Drain ASTM A479 S200 Mtg)
+|_553 [Stem Nut CARBON STEEL ClO + WzZP, |
+Po
+|
+Po
+PT
+
+416 | 554 [Stop Sector
+
+CARBON STEEL + W.ZP,
+| 556 [Antistotic Device
+CARBON STEEL + W.ZP.
+
+PROJECT/LOCATION:
+LPG EPC Brownfield Modifications
+
+ECV JOB No.: 005.25.004
+
+VBA6 130
+
+407
+171
+
+a SPLIT BODY TRUNNION
+
+BALL VALVE
+
+Drawing executed with CAD. No modifications or corrections by hand are allowed. f
+I cannot be reproduced, copied, or shown to third parties according to cuent legal provisions, | SMeet — | ° |
+
+GENERAL ASSEMBLY DRAWING, PART LIST & BOM
+
+DOC. No.: REV.
+VS1 005.25.004.100
+
+THIS DOCUMENT IS CONFIDENTIAL AND THE SOLE PROPERTY OF ERREESSE CASPIAN VALVES
+
