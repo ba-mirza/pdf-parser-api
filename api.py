@@ -22,10 +22,6 @@ app.add_middleware(
 
 @app.post("/api/parse-pdf")
 async def parse_pdf(file: UploadFile = File(...)):
-    """
-    Парсит PDF чертеж и возвращает JSON с 3 таблицами
-    """
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         content = await file.read()
         tmp.write(content)
@@ -51,4 +47,5 @@ async def parse_pdf(file: UploadFile = File(...)):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
