@@ -7,10 +7,10 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from excel_parser import (
-    compare_components,
-    merge_with_pdf,
+    merge_all_data,
     parse_bom_sheet,
     parse_manager_sheet,
+    validate_bom_with_pdf,
 )
 from parser import parse_drawing_pdf_ai
 
@@ -31,7 +31,9 @@ async def root():
     return {
         "status": "ok",
         "message": "PDF Parser API v2",
-        "endpoints": {"POST /api/parse-pdf": "Parse PDF + Excel BOM + Excel Manager"},
+        "endpoints": {
+            "POST /api/parse-pdf": "Parse PDF + Excel BOM + Excel Manager with validation"
+        },
     }
 
 
@@ -47,46 +49,42 @@ async def parse_pdf(
     bom_sheet_index: int = Form(0, description="BOM sheet index (0-13 for Foglio1-14)"),
 ):
     """
-    Полный workflow парсинга:
+    Полный workflow с валидацией:
 
-    1. Парсит PDF → SIZE + ASME + компоненты
-    2. Парсит BOM.xlsx (sheet_index) → компоненты с quantity
-    3. Парсит order-manager.xlsx (автопоиск по SIZE+ASME) → материалы
-    4. Сравнивает BOM vs Manager
-    5. Объединяет всё с PDF данными
+    1. Парсит PDF → SIZE + ASME + ENDS + компоненты
+    2. Парсит BOM.xlsx (sheet_index)
+    3. ВАЛИДАЦИЯ: BOM.size == PDF.SIZE && BOM.asme == PDF.ASME && BOM.ends == PDF.ENDS
+    4. Если валидация FAILED → возвращаем ошибку (сотрудник указал неверный sheet)
+    5. Если ОК → берём quantity из BOM
+    6. Парсит order-manager.xlsx (автопоиск по SIZE+ASME)
+    7. Сравнивает всё и возвращает результат
 
     Returns:
         {
             "success": true,
             "data": {
-                "table1": [...],
                 "table2": [
                     {
-                        "pos": "1",
-                        "description": "Body",
-                        "material": "...",
-                        "note": "...",
-                        "excel_data": {
-                            "bom": {
-                                "quantity": 1,
-                                "material": "ASTM A350 LF2"
-                            },
-                            "manager": {
-                                "material": "A350 LF2"
-                            },
-                            "material_match": false
+                        "pos": "3",
+                        "description": "Ball",
+                        "material": {
+                            "value": "ASTM A182 F316/316L",
+                            "isEqual": true,
+                            "from_manager_data": "A182 F316/F316L"
+                        },
+                        "quantity": {
+                            "value": 2,
+                            "from_bom": true
+                        },
+                        "Closures": {
+                            "from_manager_data": "A350 LF2"
                         }
                     }
-                ],
-                "table3": [...]
+                ]
             },
-            "excel_stats": {
-                "bom_sheet": 0,
-                "bom_size": "12\"",
-                "bom_asme": "ASME 600",
-                "manager_found": true,
-                "manager_row": 15,
-                "components_compared": 42
+            "validation": {
+                "bom_valid": true,
+                "manager_found": true
             }
         }
     """
@@ -122,63 +120,89 @@ async def parse_pdf(
         # ШАГ 1: Парсим PDF
         pdf_data = parse_drawing_pdf_ai(pdf_path, api_key)
 
-        excel_stats = {}
+        # Извлекаем SIZE, ASME, ENDS из table1
+        table1 = pdf_data.get("table1", [])
+        pdf_size = None
+        pdf_asme = None
+        pdf_ends = None
 
-        # ШАГ 2-5: Если есть Excel файлы - обрабатываем их
+        for item in table1:
+            if item.get("field") == "SIZE":
+                pdf_size = item.get("value")
+            elif item.get("field") == "ASME":
+                pdf_asme = item.get("value")
+            elif item.get("field") == "ENDS":
+                pdf_ends = item.get("value")
+
+        validation_info = {}
+
+        # ШАГ 2-7: Если есть Excel файлы - обрабатываем
         if bom_path and manager_path:
             try:
                 # ШАГ 2: Парсим BOM
                 bom_data = parse_bom_sheet(bom_path, bom_sheet_index)
 
-                excel_stats["bom_sheet"] = bom_sheet_index
-                excel_stats["bom_size"] = bom_data["size"]
-                excel_stats["bom_asme"] = bom_data["asme"]
-                excel_stats["bom_components"] = len(bom_data["components"])
+                # ШАГ 3: КРИТИЧЕСКАЯ ВАЛИДАЦИЯ
+                validation = validate_bom_with_pdf(
+                    bom_data, pdf_size, pdf_asme, pdf_ends
+                )
 
-                # ШАГ 3: Парсим Manager (ищем по SIZE и ASME из BOM)
+                validation_info["bom_validation"] = validation
+
+                # ШАГ 4: Если валидация провалилась - ОСТАНАВЛИВАЕМСЯ
+                if not validation["valid"]:
+                    return {
+                        "success": False,
+                        "error": "BOM validation failed - неверный sheet_index",
+                        "validation_errors": validation["errors"],
+                        "bom_data": {
+                            "size": bom_data["size"],
+                            "asme": bom_data["asme"],
+                            "ends": bom_data["ends"],
+                        },
+                        "pdf_data": {
+                            "size": pdf_size,
+                            "asme": pdf_asme,
+                            "ends": pdf_ends,
+                        },
+                        "message": "Сотрудник указал неверный bom_sheet_index. Данные не совпадают с PDF.",
+                    }
+
+                # ШАГ 5: Валидация ОК - продолжаем
+                validation_info["bom_valid"] = True
+                validation_info["bom_sheet"] = bom_sheet_index
+                validation_info["bom_components"] = len(bom_data["components"])
+
+                # ШАГ 6: Парсим Manager
                 manager_data = parse_manager_sheet(
                     manager_path, bom_data["size"], bom_data["asme"]
                 )
 
                 if manager_data["found"]:
-                    excel_stats["manager_found"] = True
-                    excel_stats["manager_row"] = manager_data["row"]
-                    excel_stats["manager_size"] = manager_data["size"]
-                    excel_stats["manager_asme"] = manager_data["asme"]
-                    excel_stats["manager_components"] = len(manager_data["components"])
-
-                    # ШАГ 4: Сравниваем BOM vs Manager
-                    comparison = compare_components(
-                        bom_data["components"], manager_data["components"]
+                    validation_info["manager_found"] = True
+                    validation_info["manager_row"] = manager_data["row"]
+                    validation_info["manager_materials"] = len(
+                        manager_data["materials"]
                     )
 
-                    excel_stats["components_compared"] = len(comparison)
-
-                    # ШАГ 5: Merge с PDF
-                    pdf_data = merge_with_pdf(pdf_data, comparison)
-
+                    # ШАГ 7: Объединяем всё
+                    pdf_data = merge_all_data(
+                        pdf_data, bom_data["components"], manager_data["materials"]
+                    )
                 else:
-                    excel_stats["manager_found"] = False
-                    excel_stats["manager_error"] = manager_data.get("error")
+                    validation_info["manager_found"] = False
+                    validation_info["manager_error"] = manager_data.get("error")
 
             except Exception as excel_error:
-                excel_stats["error"] = f"Ошибка обработки Excel: {str(excel_error)}"
-
-        elif bom_path:
-            # Только BOM без Manager
-            try:
-                bom_data = parse_bom_sheet(bom_path, bom_sheet_index)
-                excel_stats["bom_only"] = True
-                excel_stats["bom_size"] = bom_data["size"]
-                excel_stats["bom_asme"] = bom_data["asme"]
-                excel_stats["bom_components"] = len(bom_data["components"])
-            except Exception as e:
-                excel_stats["error"] = f"Ошибка BOM: {str(e)}"
+                return {
+                    "success": False,
+                    "error": f"Ошибка обработки Excel: {str(excel_error)}",
+                }
 
         response = {"success": True, "data": pdf_data}
 
-        if excel_stats:
-            response["excel_stats"] = excel_stats
+        if validation_info:
+            response["validation"] = validation_info
 
         return response
 
