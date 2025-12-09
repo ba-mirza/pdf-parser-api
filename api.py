@@ -3,9 +3,11 @@ import tempfile
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import Body, FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
+from excel_export import generate_excel_from_api_response
 from excel_parser import (
     merge_all_data,
     parse_bom_sheet,
@@ -32,9 +34,37 @@ async def root():
         "status": "ok",
         "message": "PDF Parser API v2",
         "endpoints": {
-            "POST /api/parse-pdf": "Parse PDF + Excel BOM + Excel Manager with validation"
+            "POST /api/parse-pdf": "Parse PDF + Excel BOM + Excel Manager with validation",
+            "POST /api/export-excel": "Export parsing results to Excel file",
         },
     }
+
+
+@app.post("/api/export-excel")
+async def export_excel(data: dict = Body(...)):
+    """
+    Экспортирует результаты парсинга в Excel файл с цветовой индикацией
+
+    Args:
+        data: результат от /api/parse-pdf (JSON body)
+
+    Returns:
+        Excel файл для скачивания
+    """
+
+    try:
+        # Генерируем Excel
+        excel_path = generate_excel_from_api_response(data)
+
+        # Возвращаем файл
+        return FileResponse(
+            excel_path,
+            filename=f"parsing_result_{os.path.basename(excel_path).split('_', 2)[-1]}",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except Exception as e:
+        return {"success": False, "error": f"Excel generation failed: {str(e)}"}
 
 
 @app.post("/api/parse-pdf")
