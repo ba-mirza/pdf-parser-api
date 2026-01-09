@@ -1,12 +1,14 @@
 import openpyxl
 from fuzzywuzzy import fuzz
 
+from hybrid_compare import smart_material_match
+
 
 def parse_bom_sheet(filepath, sheet_index):
     """
     Парсит конкретный лист BOM.xlsx
     Извлекает classe, dimensione, estremità для валидации
-    И компоненты с quantity
+    И компоненты с quantity И материалом
 
     Returns:
         {
@@ -14,8 +16,10 @@ def parse_bom_sheet(filepath, sheet_index):
             "asme": "ASME 600",
             "ends": "RTJ",
             "components": {
-                "Body": {"quantity": 1},
-                "Ball": {"quantity": 1},
+                "Body": {
+                    "quantity": 1,
+                    "material": "A350 LF2"  ← НОВОЕ!
+                },
                 ...
             }
         }
@@ -36,8 +40,9 @@ def parse_bom_sheet(filepath, sheet_index):
         if len(row) <= 42:
             continue
 
-        component_name = row[28]  # AC - Descrizione componente
-        quantity = row[42]  # AQ - Q.tà
+        component_name = row[28]  # AC (index 28) - Descrizione componente
+        quantity = row[42]  # AQ (index 42) - Q.tà
+        material = row[5]  # F (index 5) - MAT. ← ИСПРАВЛЕНО!
 
         # Пропускаем пустые строки или строки со смещением
         if not component_name or str(component_name).strip() == "":
@@ -54,7 +59,10 @@ def parse_bom_sheet(filepath, sheet_index):
         except (ValueError, TypeError):
             qty = 1
 
-        components[name] = {"quantity": qty}
+        # Извлекаем материал из колонки F (MAT.)
+        mat = str(material).strip() if material else ""
+
+        components[name] = {"quantity": qty, "material": mat}
 
     return {
         "size": str(size).strip() if size else None,
@@ -206,27 +214,19 @@ def find_matching_manager_column(pdf_description, manager_materials):
 
     pdf_lower = pdf_description.lower().strip()
 
-    # Точное совпадение
+    # 1. Точное совпадение (case-insensitive)
     for manager_key, manager_value in manager_materials.items():
         if pdf_lower == manager_key.lower():
             return (manager_key, manager_value)
 
-    # Частичное совпадение
-    for manager_key, manager_value in manager_materials.items():
-        manager_lower = manager_key.lower()
-
-        # Проверяем вхождение
-        if pdf_lower in manager_lower or manager_lower in pdf_lower:
-            return (manager_key, manager_value)
-
-    # Fuzzy match
+    # 2. Fuzzy match (порог 80% для более строгого совпадения)
     best_match = None
     best_score = 0
 
     for manager_key, manager_value in manager_materials.items():
         score = fuzz.token_sort_ratio(pdf_lower, manager_key.lower())
 
-        if score > best_score and score >= 70:
+        if score > best_score and score >= 80:  # Повысили порог: 70 → 80
             best_score = score
             best_match = (manager_key, manager_value)
 
@@ -235,20 +235,26 @@ def find_matching_manager_column(pdf_description, manager_materials):
 
 def merge_all_data(pdf_data, bom_components, manager_materials):
     """
-    Объединяет данные из PDF, BOM и Manager
+    Объединяет данные из PDF, BOM и Manager с УМНЫМ сравнением материалов
 
-    Правила:
-    1. Для каждого компонента PDF → ищем соответствующую колонку Manager → сравниваем
-    2. Для колонок Manager которых нет в PDF → создаём новые объекты
+    НОВАЯ ЛОГИКА:
+    1. Материал ВСЕГДА из PDF (это истина!)
+    2. Сравниваем материал PDF с BOM материалом (умное сравнение)
+    3. Сравниваем материал PDF с Order материалом (умное сравнение)
+    4. Если хотя бы один токен совпал → равны
+    5. Quantity берем из BOM (как было)
 
-    Структура:
+    Структура ответа:
     {
-        "material": {
-            "value": "из PDF",
-            "isEqual": true/false/null,
-            "from_manager_data": "из Manager",
-            "new_item": false
-        }
+        "pos": "10",
+        "description": "Body",
+        "material": "ASTM A350 LF2 CL1",        ← Всегда из PDF!
+        "bom_material": "A350 LF2",             ← Для UI
+        "order_material": "A350 LF2",           ← Для UI
+        "quantity": 2,                          ← Из BOM
+        "manager_quantity": None,               ← Пока None
+        "status": "equal",                      ← equal / notEqual / new
+        "note": ""
     }
     """
 
@@ -258,62 +264,91 @@ def merge_all_data(pdf_data, bom_components, manager_materials):
     # Обрабатываем компоненты из PDF
     for item in pdf_data.get("table2", []):
         description = item.get("description", "").strip()
+        pdf_material = item.get("material", "").strip()
 
         if not description:
             continue
 
-        # 1. Добавляем quantity из BOM
+        # ===== ШАГ 1: Ищем в BOM =====
         matched_bom = None
+        bom_material = ""
+
         for bom_name, bom_data in bom_components.items():
             if fuzz.token_sort_ratio(description.lower(), bom_name.lower()) >= 70:
                 matched_bom = bom_data
+                bom_material = bom_data.get("material", "")
                 break
 
-        if matched_bom:
-            item["quantity"] = {"value": matched_bom["quantity"], "from_bom": True}
+        # Достаем quantity из BOM
+        bom_quantity = matched_bom["quantity"] if matched_bom else None
 
-        # 2. Находим соответствующую колонку в Manager
-        manager_column, manager_value = find_matching_manager_column(
+        # ===== ШАГ 2: НОВОЕ - Умное сравнение материала PDF с BOM =====
+        bom_materials_match = False
+        if pdf_material and bom_material:
+            bom_materials_match, _ = smart_material_match(
+                pdf_material, bom_material
+            )  # Распаковываем кортеж!
+
+        # ===== ШАГ 3: Находим соответствующую колонку в Manager =====
+        manager_column, manager_material = find_matching_manager_column(
             description, manager_materials
         )
 
         if manager_column:
             used_manager_columns.add(manager_column)
 
-        # 3. Обрабатываем material из PDF
-        pdf_material = item.get("material", "")
+        # ===== ШАГ 4: НОВОЕ - Умное сравнение материала PDF с Order =====
+        order_materials_match = False
+        if pdf_material and manager_material:
+            order_materials_match, _ = smart_material_match(
+                pdf_material, manager_material
+            )  # Распаковываем кортеж!
 
-        if pdf_material:
-            # Сравниваем с Manager
-            is_equal = None
-            if manager_value:
-                similarity = fuzz.token_sort_ratio(
-                    str(pdf_material).lower(), str(manager_value).lower()
-                )
-                is_equal = similarity >= 75
+        # ===== ШАГ 5: Определяем статус =====
+        # ВАЖНО: Компонент из PDF НЕ МОЖЕТ быть "new"!
+        # "new" только для компонентов из Order Manager (которых нет в PDF)
 
-            item["material"] = {
-                "value": pdf_material,
-                "isEqual": is_equal,
-                "from_manager_data": manager_value if manager_value else None,
-                "new_item": False,
-            }
-        elif manager_value:
-            # Нет в PDF, но есть в Manager
-            item["material"] = {
-                "value": None,
-                "isEqual": None,
-                "from_manager_data": manager_value,
-                "new_item": False,
-            }
+        if bom_materials_match or order_materials_match:
+            # Материалы совпали (хотя бы один токен)
+            status = "equal"
+        elif (bom_material or manager_material) and not (
+            bom_materials_match or order_materials_match
+        ):
+            # Материалы ЕСТЬ, но НЕ совпали
+            status = "notEqual"
+        else:
+            # Материалов нет для сравнения ИЛИ компонент только в PDF
+            # По умолчанию = equal (считаем что всё ОК)
+            status = "equal"
 
-    # 4. Добавляем компоненты которых НЕТ в PDF, но ЕСТЬ в Manager
-    for manager_column, manager_value in manager_materials.items():
+        # ===== ШАГ 6: Формируем результат =====
+        item["material"] = pdf_material  # ← Всегда из PDF (истина!)
+        item["bom_material"] = bom_material if bom_material else None
+        item["order_material"] = manager_material if manager_material else None
+        item["quantity"] = bom_quantity
+        item["manager_quantity"] = (
+            None  # Пока None (нужно добавить в parse_manager_sheet)
+        )
+        item["status"] = status
+
+        # Сохраняем note если была
+        if "note" not in item:
+            item["note"] = ""
+
+    # ===== ШАГ 7: Добавляем компоненты которых НЕТ в PDF, но ЕСТЬ в Manager =====
+    for manager_column, manager_material in manager_materials.items():
         if manager_column not in used_manager_columns:
             # Создаём новый объект
             new_item = {
+                "pos": "",
                 "description": manager_column,
-                "material": {"value": manager_value, "isEqual": None, "new_item": True},
+                "material": manager_material,  # Берем из Manager (в PDF нет)
+                "bom_material": None,
+                "order_material": manager_material,
+                "quantity": None,
+                "manager_quantity": None,
+                "status": "new",
+                "note": "",
             }
 
             pdf_data.get("table2", []).append(new_item)

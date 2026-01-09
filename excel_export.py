@@ -1,6 +1,7 @@
 """
 Excel Export Module
 Генерирует красиво отформатированный Excel файл с результатами парсинга
+ОБНОВЛЕНО: Одна колонка Material (всегда из PDF)
 """
 
 import os
@@ -54,6 +55,11 @@ def auto_adjust_column_width(ws, min_width: int = 10, max_width: int = 50):
 def generate_excel_report(data: dict, output_path: str = None) -> str:
     """
     Генерирует Excel отчёт с цветовой индикацией
+
+    НОВАЯ СТРУКТУРА:
+    - Только одна колонка Material (из PDF - истина!)
+    - Status: equal / notEqual / new
+    - Цветовая индикация по статусу
 
     Args:
         data: результат парсинга (table1, table2, table3)
@@ -115,13 +121,9 @@ def generate_excel_report(data: dict, output_path: str = None) -> str:
     table2 = data.get("table2", [])
 
     total = len(table2)
-    equal = len([c for c in table2 if c.get("material", {}).get("isEqual") == True])
-    not_equal = len(
-        [c for c in table2 if c.get("material", {}).get("isEqual") == False]
-    )
-    new_items = len(
-        [c for c in table2 if c.get("material", {}).get("new_item") == True]
-    )
+    equal = len([c for c in table2 if c.get("status") == "equal"])
+    not_equal = len([c for c in table2 if c.get("status") == "notEqual"])
+    new_items = len([c for c in table2 if c.get("status") == "new"])
 
     ws["A4"] = "STATISTICS:"
     ws["A4"].font = Font(bold=True, size=12)
@@ -139,12 +141,13 @@ def generate_excel_report(data: dict, output_path: str = None) -> str:
         ws[f"A{idx}"].font = Font(bold=True)
 
     # ========== ТАБЛИЦА ЗАГОЛОВКИ ==========
+    # НОВОЕ: Только одна колонка Material (из PDF)!
     headers = [
         "Pos",
         "Description",
-        "Material (PDF)",
-        "Manager Data",
-        "Qty",
+        "Material",  # ← ОДНА колонка! (из PDF - истина)
+        "Quantity",
+        "Manager Quantity",  # ← Добавляем если есть
         "Status",
         "Note",
     ]
@@ -165,39 +168,44 @@ def generate_excel_report(data: dict, output_path: str = None) -> str:
         pos = component.get("pos", "-")
         description = component.get("description", "")
 
-        material_obj = component.get("material", {})
-        material_value = material_obj.get("value", "-")
-        manager_data = material_obj.get("from_manager_data", "-")
-        is_equal = material_obj.get("isEqual")
-        new_item = material_obj.get("new_item", False)
+        # НОВОЕ: material теперь строка (не объект!)
+        material = component.get("material", "-")
+        if not material or material == "":
+            material = "-"
 
-        quantity_obj = component.get("quantity", {})
-        quantity = quantity_obj.get("value", "-") if quantity_obj else "-"
+        quantity = component.get("quantity", "-")
+        if quantity is None or quantity == "":
+            quantity = "-"
 
+        manager_quantity = component.get("manager_quantity", "-")
+        if manager_quantity is None or manager_quantity == "":
+            manager_quantity = "-"
+
+        status = component.get("status", "-")
         note = component.get("note", "-")
 
-        # Определяем статус
-        if new_item:
-            status = "🆕 New Item"
+        # Определяем цветовой фон по статусу
+        if status == "new":
+            status_text = "🆕 New Item"
             row_fill = new_item_fill
-        elif is_equal == False:
-            status = "❌ Not Equal"
+        elif status == "notEqual":
+            status_text = "❌ Not Equal"
             row_fill = not_equal_fill
-        elif is_equal == True:
-            status = "✅ Equal"
+        elif status == "equal":
+            status_text = "✅ Equal"
             row_fill = equal_fill
         else:
-            status = "-"
+            status_text = status
             row_fill = None
 
         # Заполняем строку
         row_data = [
             pos,
             description,
-            material_value,
-            manager_data,
+            material,  # ← Всегда из PDF (истина!)
             quantity,
-            status,
+            manager_quantity,
+            status_text,
             note,
         ]
 
@@ -224,7 +232,7 @@ def generate_excel_report(data: dict, output_path: str = None) -> str:
     ws[f"A{legend_row}"].font = Font(bold=True, size=11)
 
     legend_data = [
-        ("✅ Equal", "Materials match between PDF and Manager", equal_fill),
+        ("✅ Equal", "Materials match (smart comparison)", equal_fill),
         ("❌ Not Equal", "Materials do not match", not_equal_fill),
         ("🆕 New Item", "Found only in Manager Excel", new_item_fill),
     ]
