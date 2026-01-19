@@ -4,6 +4,78 @@ from fuzzywuzzy import fuzz
 from hybrid_compare import smart_material_match
 
 
+def find_best_component_match(pdf_description, bom_components):
+    """
+    Находит лучшее совпадение компонента из BOM для PDF компонента
+
+    ПРАВИЛЬНАЯ ЛОГИКА С ПРИОРИТЕТАМИ:
+    1. Точное совпадение (case-insensitive)
+    2. Все слова из PDF есть в BOM (токенизация)
+    3. Fuzzy matching с высоким порогом (только если ничего не нашли)
+
+    Args:
+        pdf_description: название компонента из PDF
+        bom_components: dict с компонентами BOM {name: {material, quantity}}
+
+    Returns:
+        (bom_name, bom_data, match_type) или (None, None, None)
+    """
+
+    pdf_lower = pdf_description.lower().strip()
+
+    # ===== ПРИОРИТЕТ 1: ТОЧНОЕ СОВПАДЕНИЕ =====
+    for bom_name, bom_data in bom_components.items():
+        bom_lower = bom_name.lower().strip()
+
+        if pdf_lower == bom_lower:
+            return (bom_name, bom_data, "exact")
+
+    # ===== ПРИОРИТЕТ 2: ВСЕ СЛОВА PDF ЕСТЬ В BOM =====
+    # Проверяем что все значимые слова из PDF присутствуют в BOM
+    # Например: "Operator Flange" → все слова есть в "Gland/operator Flange Screw"
+
+    pdf_words = set(pdf_lower.replace("/", " ").replace("-", " ").split())
+
+    word_matches = []
+
+    for bom_name, bom_data in bom_components.items():
+        bom_lower = bom_name.lower().strip()
+        bom_words = set(bom_lower.replace("/", " ").replace("-", " ").split())
+
+        # Все слова из PDF есть в BOM?
+        if pdf_words.issubset(bom_words):
+            # Чем меньше разница - тем точнее совпадение
+            extra_words = len(bom_words - pdf_words)
+            word_matches.append((bom_name, bom_data, extra_words))
+
+    # Если нашли - выбираем с минимумом лишних слов
+    if word_matches:
+        word_matches.sort(key=lambda x: x[2])
+        bom_name, bom_data, _ = word_matches[0]
+        return (bom_name, bom_data, "word_match")
+
+    # ===== ПРИОРИТЕТ 3: FUZZY MATCHING (только если ничего не нашли) =====
+    best_match = None
+    best_score = 0
+
+    for bom_name, bom_data in bom_components.items():
+        bom_lower = bom_name.lower().strip()
+
+        score = fuzz.token_sort_ratio(pdf_lower, bom_lower)
+
+        # ВАЖНО: Высокий порог 85 (было 70)
+        # Избегаем ложных срабатываний типа "Operator Flange" → "Operator Nut"
+        if score > best_score and score >= 85:
+            best_score = score
+            best_match = (bom_name, bom_data)
+
+    if best_match:
+        return (best_match[0], best_match[1], f"fuzzy_{best_score}")
+
+    # Ничего не нашли
+    return (None, None, None)
+
+
 def parse_bom_sheet(filepath, sheet_index):
     """
     Парсит конкретный лист BOM.xlsx
@@ -224,7 +296,10 @@ def find_matching_manager_column(pdf_description, manager_materials):
     """
     Находит соответствующую колонку Manager для компонента PDF
 
-    ИСПРАВЛЕНО: Возвращает ЛУЧШЕЕ совпадение, а не первое!
+    ПРАВИЛЬНАЯ ЛОГИКА С ПРИОРИТЕТАМИ (как в find_best_component_match):
+    1. Точное совпадение
+    2. Все слова из PDF есть в Manager
+    3. Fuzzy matching с высоким порогом
 
     Args:
         pdf_description: "Body", "Ball", "Seat Spring", etc.
@@ -241,18 +316,35 @@ def find_matching_manager_column(pdf_description, manager_materials):
         if pdf_lower == manager_key.lower():
             return (manager_key, manager_value)
 
-    # 2. Fuzzy match - НО БЕРЕМ ЛУЧШЕЕ, А НЕ ПЕРВОЕ!
+    # 2. Все слова из PDF есть в Manager
+    pdf_words = set(pdf_lower.replace("/", " ").replace("-", " ").split())
+
+    word_matches = []
+    for manager_key, manager_value in manager_materials.items():
+        manager_lower = manager_key.lower().strip()
+        manager_words = set(manager_lower.replace("/", " ").replace("-", " ").split())
+
+        if pdf_words.issubset(manager_words):
+            extra_words = len(manager_words - pdf_words)
+            word_matches.append((manager_key, manager_value, extra_words))
+
+    if word_matches:
+        word_matches.sort(key=lambda x: x[2])
+        return (word_matches[0][0], word_matches[0][1])
+
+    # 3. Fuzzy match (только если ничего не нашли)
     best_match = None
     best_score = 0
 
     for manager_key, manager_value in manager_materials.items():
         score = fuzz.token_sort_ratio(pdf_lower, manager_key.lower())
 
-        if score > best_score and score >= 80:  # Порог 80
+        if score > best_score and score >= 85:  # Повышен порог: 80 → 85
             best_score = score
             best_match = (manager_key, manager_value)
 
     return best_match if best_match else (None, None)
+
 
 
 def merge_all_data(pdf_data, bom_components, manager_materials):
@@ -288,27 +380,17 @@ def merge_all_data(pdf_data, bom_components, manager_materials):
         if not description:
             continue
 
-        # ===== ШАГ 1: Ищем в BOM (ИСПРАВЛЕНО!) =====
-        matched_bom = None
-        bom_material = ""
+        # ===== ШАГ 1: Ищем в BOM (ПРАВИЛЬНАЯ ЛОГИКА С ПРИОРИТЕТАМИ!) =====
+        bom_name, bom_data, match_type = find_best_component_match(description, bom_components)
 
-        # Ищем ЛУЧШЕЕ совпадение, а не первое!
-        best_match_name = None
-        best_match_score = 0
-        best_match_data = None
+        if bom_data:
+            matched_bom = bom_data
+            bom_material = bom_data.get("material", "")
+            print(f"  🔗 '{description}' → '{bom_name}' ({match_type})")
+        else:
+            matched_bom = None
+            bom_material = ""
 
-        for bom_name, bom_data in bom_components.items():
-            score = fuzz.token_sort_ratio(description.lower(), bom_name.lower())
-
-            if score > best_match_score and score >= 70:
-                best_match_score = score
-                best_match_name = bom_name
-                best_match_data = bom_data
-
-        if best_match_data:
-            matched_bom = best_match_data
-            bom_material = best_match_data.get("material", "")
-            print(f"  🔗 '{description}' → '{best_match_name}' (score: {best_match_score})")
 
         # Достаем quantity из BOM
         bom_quantity = matched_bom["quantity"] if matched_bom else None
